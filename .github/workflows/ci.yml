@@ -1,0 +1,71 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Python ${{ matrix.python }} on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python: ["3.11", "3.12", "3.13", "3.14"]
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+      - name: Install package
+        run: python -m pip install .
+      - name: Run tests
+        run: python -m unittest discover -s tests -v
+      - name: Smoke test console
+        run: |
+          skill-quality-lab --version
+          skill-quality-lab doctor
+
+  package:
+    name: Build distributions
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.13"
+          cache: pip
+      - name: Install build tools
+        run: python -m pip install build twine
+      - name: Build wheel and source distribution
+        run: python -m build
+      - name: Validate metadata
+        run: python -m twine check dist/*
+      - name: Test wheel in a clean environment
+        run: |
+          python -m venv wheel-env
+          wheel-env/bin/python -m pip install dist/*.whl
+          wheel-env/bin/skill-quality-lab --version
+          wheel-env/bin/skill-quality-lab doctor
+          export CODEX_HOME="$RUNNER_TEMP/codex"
+          wheel-env/bin/skill-quality-lab install --client codex --dry-run
+          test ! -e "$CODEX_HOME/skills"
+          wheel-env/bin/skill-quality-lab install --client codex
+          wheel-env/bin/python "$CODEX_HOME/skills/skill-quality-lab/scripts/audit_skill.py" \
+            "$CODEX_HOME/skills/skill-quality-lab" --profile codex --strict
+          wheel-env/bin/skill-quality-lab uninstall --client codex --yes
