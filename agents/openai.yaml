@@ -1,0 +1,4 @@
+interface:
+  display_name: "Skill Quality Lab"
+  short_description: "Audite skills, segurança, dependências e integrações"
+  default_prompt: "Use $skill-quality-lab para auditar esta skill ou integração, executar os checks aplicáveis e propor melhorias verificáveis."
