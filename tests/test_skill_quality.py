@@ -1,30 +1,37 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 import tempfile
+import tomllib
 import unittest
 import zipfile
 from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
-
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS = ROOT / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 
-from activation_suite import summarize, validate_suite
-from activation_runner_lib import call_provider, execute_suite
-from check_dependencies import check_dependencies
-from ecosystem_adapters import audit_ecosystem
-from install_skill import install_staged, safe_extract
-from package_skill import create_package
-from runtime_checks import check_runtime_file
-from security_checks import scan_security
-from security_scan import scan as run_security_scan
-from skill_quality_lib import audit_skill, load_config, parse_frontmatter
+from skill_quality_lab.activation_runner_lib import call_provider, execute_suite
+from skill_quality_lab.activation_suite import summarize, validate_suite
+from skill_quality_lab.check_dependencies import check_dependencies
+from skill_quality_lab.cli import main as cli_main
+from skill_quality_lab.cli import materialize_bundled_skill, resolve_destination
+from skill_quality_lab.ecosystem_adapters import audit_ecosystem
+from skill_quality_lab.install_skill import install_staged, safe_extract
+from skill_quality_lab.package_skill import create_package, package_files
+from skill_quality_lab.runtime_checks import check_runtime_file
+from skill_quality_lab.security_checks import scan_security
+from skill_quality_lab.security_scan import scan as run_security_scan
+from skill_quality_lab.skill_quality_lib import (
+    audit_skill,
+    load_config,
+    parse_frontmatter,
+)
 
 
 def skill_text(name: str = "demo") -> str:
@@ -175,7 +182,7 @@ class RuntimeCheckTests(unittest.TestCase):
                 self.assertEqual("failed", result.status)
 
     def test_missing_external_checker_is_not_assessed(self) -> None:
-        with mock.patch("runtime_checks.shutil.which", return_value=None):
+        with mock.patch("skill_quality_lab.runtime_checks.shutil.which", return_value=None):
             result = check_runtime_file(Path("script.sh"), "echo ok\n")
         self.assertEqual("not_assessed", result.status)
 
@@ -204,7 +211,7 @@ class SecurityTests(unittest.TestCase):
 
     def test_requested_unavailable_external_scanner_is_incomplete(self) -> None:
         with tempfile.TemporaryDirectory() as value:
-            with mock.patch("security_scan.shutil.which", return_value=None):
+            with mock.patch("skill_quality_lab.security_scan.shutil.which", return_value=None):
                 result = run_security_scan(Path(value), external="gitleaks")
             self.assertEqual("ready with warnings", result["verdict"])
             self.assertEqual("not_assessed", result["external"][0]["status"])
@@ -261,7 +268,7 @@ class ActivationRunnerTests(unittest.TestCase):
         for provider, response in fixtures.items():
             with self.subTest(provider=provider):
                 with mock.patch.dict("os.environ", environments[provider], clear=True), \
-                     mock.patch("activation_runner_lib._request_json", return_value=response):
+                     mock.patch("skill_quality_lab.activation_runner_lib._request_json", return_value=response):
                     self.assertEqual(provider, call_provider(provider, "model", "prompt", 1))
 
 
@@ -300,7 +307,7 @@ class EcosystemAdapterTests(unittest.TestCase):
             (root / "app.js").write_text(
                 'import { AIMessage } from "@langchain/core/messages";\n', encoding="utf-8")
             runtime_result = SimpleNamespace(status="passed", language="javascript", evidence="valid")
-            with mock.patch("ecosystem_adapters.check_runtime_file", return_value=runtime_result):
+            with mock.patch("skill_quality_lab.ecosystem_adapters.check_runtime_file", return_value=runtime_result):
                 self.assertEqual("ready", audit_ecosystem(root, "langchain")["verdict"])
 
     def test_langchain_rejects_invalid_javascript(self) -> None:
@@ -312,7 +319,7 @@ class EcosystemAdapterTests(unittest.TestCase):
                 'import "@langchain/core";\nconst = ;\n', encoding="utf-8")
             runtime_result = SimpleNamespace(
                 status="failed", language="javascript", evidence="SyntaxError")
-            with mock.patch("ecosystem_adapters.check_runtime_file", return_value=runtime_result):
+            with mock.patch("skill_quality_lab.ecosystem_adapters.check_runtime_file", return_value=runtime_result):
                 result = audit_ecosystem(root, "langchain")
             self.assertIn("invalid-framework-source", {item["code"] for item in result["findings"]})
 
@@ -359,6 +366,17 @@ class PackagingAndInstallTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "symlinks"):
                 safe_extract(archive, temp / "out")
 
+    def test_safe_extract_rejects_nonportable_windows_names(self) -> None:
+        unsafe_names = ("folder/file.txt:stream", "CON.txt", "folder\\..\\outside.txt")
+        for unsafe_name in unsafe_names:
+            with self.subTest(unsafe_name=unsafe_name), tempfile.TemporaryDirectory() as value:
+                temp = Path(value)
+                archive = temp / "unsafe.zip"
+                with zipfile.ZipFile(archive, "w") as handle:
+                    handle.writestr(unsafe_name, "bad")
+                with self.assertRaisesRegex(ValueError, "archive member"):
+                    safe_extract(archive, temp / "out")
+
     def test_safe_extract_rejects_excessive_expanded_size(self) -> None:
         member = SimpleNamespace(file_size=256 * 1024 * 1024 + 1)
 
@@ -372,7 +390,7 @@ class PackagingAndInstallTests(unittest.TestCase):
             def infolist(self):
                 return [member]
 
-        with mock.patch("install_skill.zipfile.ZipFile", return_value=FakeArchive()):
+        with mock.patch("skill_quality_lab.install_skill.zipfile.ZipFile", return_value=FakeArchive()):
             with self.assertRaisesRegex(ValueError, "expands beyond"):
                 safe_extract(Path("unused.zip"), Path("unused"))
 
@@ -391,6 +409,136 @@ class PackagingAndInstallTests(unittest.TestCase):
                     install_staged(staging, destination, "demo", replace=True)
             self.assertEqual("old", (installed / "version.txt").read_text(encoding="utf-8"))
             self.assertFalse(any(destination.glob(".skill-quality-install-*")))
+
+
+class DistributionTests(unittest.TestCase):
+    def test_cli_version(self) -> None:
+        with mock.patch("sys.stdout") as output:
+            self.assertEqual(0, cli_main(["--version"]))
+        self.assertTrue(output.write.called)
+
+    def test_client_destination_precedence(self) -> None:
+        explicit = Path("custom skills")
+        with mock.patch.dict("os.environ", {"CODEX_HOME": "C:/ignored"}, clear=True):
+            self.assertEqual(explicit.resolve(), resolve_destination("codex", explicit))
+
+    def test_client_environment_destinations(self) -> None:
+        with tempfile.TemporaryDirectory() as value:
+            configured = Path(value).resolve()
+            with mock.patch.dict("os.environ", {"CODEX_HOME": str(configured)}, clear=True):
+                self.assertEqual(configured / "skills", resolve_destination("codex"))
+            with mock.patch.dict("os.environ", {"CLAUDE_CONFIG_DIR": str(configured)}, clear=True):
+                self.assertEqual(configured / "skills", resolve_destination("claude"))
+
+    def test_relative_client_environment_is_rejected(self) -> None:
+        with mock.patch.dict("os.environ", {"CODEX_HOME": "relative/path"}, clear=True):
+            with self.assertRaisesRegex(ValueError, "absolute path"):
+                resolve_destination("codex")
+
+    def test_project_metadata_matches_runtime_requirements(self) -> None:
+        metadata = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+        self.assertEqual("skill-quality-lab", metadata["project"]["name"])
+        self.assertEqual(["PyYAML>=6.0,<7"], metadata["project"]["dependencies"])
+        requirements = (ROOT / "scripts" / "requirements.txt").read_text(encoding="utf-8").splitlines()
+        self.assertEqual(["PyYAML>=6.0,<7"], requirements)
+
+    def test_skill_archive_excludes_pypi_only_modules(self) -> None:
+        packaged = {path.relative_to(ROOT).as_posix() for path in package_files(ROOT)}
+        self.assertNotIn("scripts/skill_quality_lab/cli.py", packaged)
+        self.assertNotIn("scripts/skill_quality_lab/__main__.py", packaged)
+        self.assertIn("scripts/skill_quality_lab/audit_skill.py", packaged)
+
+    def test_materialized_skill_is_standalone(self) -> None:
+        with tempfile.TemporaryDirectory() as value:
+            installed = materialize_bundled_skill(Path(value))
+            self.assertTrue((installed / "SKILL.md").is_file())
+            self.assertTrue((installed / "scripts" / "audit_skill.py").is_file())
+            self.assertTrue((installed / "scripts" / "skill_quality_lab" / "audit_skill.py").is_file())
+            self.assertFalse((installed / "README.md").exists())
+            self.assertFalse((installed / "scripts" / "skill_quality_lab" / "cli.py").exists())
+
+    def test_client_install_dry_run_does_not_create_destination(self) -> None:
+        with tempfile.TemporaryDirectory() as value, mock.patch("sys.stdout"):
+            destination = Path(value) / "missing" / "skills"
+            result = cli_main([
+                "install", "--client", "codex", "--destination", str(destination), "--dry-run",
+            ])
+            self.assertEqual(0, result)
+            self.assertFalse(destination.exists())
+
+    def test_client_install_detects_extra_empty_directory(self) -> None:
+        with tempfile.TemporaryDirectory() as value, mock.patch("sys.stdout"), mock.patch("sys.stderr"):
+            destination = Path(value) / "config" / "skills"
+            installed = materialize_bundled_skill(destination)
+            (installed / "unexpected-empty-directory").mkdir()
+            with self.assertRaises(SystemExit):
+                cli_main(["install", "--client", "codex", "--destination", str(destination)])
+
+    def test_client_replace_backs_up_and_cleans_existing_tree(self) -> None:
+        with tempfile.TemporaryDirectory() as value, mock.patch("sys.stdout"):
+            destination = Path(value) / "config" / "skills"
+            installed = materialize_bundled_skill(destination)
+            (installed / "unexpected-empty-directory").mkdir()
+            result = cli_main([
+                "install", "--client", "codex", "--destination", str(destination), "--replace",
+            ])
+            self.assertEqual(0, result)
+            self.assertFalse((installed / "unexpected-empty-directory").exists())
+            backups = list((destination.parent / ".skill-quality-lab-backups" / "codex").iterdir())
+            self.assertEqual(1, len(backups))
+            self.assertTrue((backups[0] / "unexpected-empty-directory").is_dir())
+
+    def test_client_replace_restores_previous_tree_on_failure(self) -> None:
+        with tempfile.TemporaryDirectory() as value, mock.patch("sys.stdout"), mock.patch("sys.stderr"):
+            destination = Path(value) / "config" / "skills"
+            installed = materialize_bundled_skill(destination)
+            marker = installed / "existing-marker.txt"
+            marker.write_text("preserve", encoding="utf-8")
+            with mock.patch.object(Path, "replace", side_effect=OSError("simulated failure")):
+                with self.assertRaises(SystemExit):
+                    cli_main([
+                        "install", "--client", "codex", "--destination", str(destination), "--replace",
+                    ])
+            self.assertEqual("preserve", marker.read_text(encoding="utf-8"))
+            self.assertFalse(any(destination.glob(".skill-quality-install-*")))
+
+    def test_client_install_and_uninstall_refuse_symbolic_link_target(self) -> None:
+        with tempfile.TemporaryDirectory() as value:
+            temp = Path(value)
+            destination = temp / "config" / "skills"
+            destination.mkdir(parents=True)
+            backing = temp / "backing"
+            backing.mkdir()
+            target = destination / "skill-quality-lab"
+            try:
+                os.symlink(backing, target, target_is_directory=True)
+            except OSError as exc:
+                self.skipTest(f"symbolic links unavailable: {exc}")
+            with mock.patch("sys.stdout"), mock.patch("sys.stderr"):
+                with self.assertRaises(SystemExit):
+                    cli_main([
+                        "install", "--client", "codex", "--destination", str(destination), "--replace",
+                    ])
+                with self.assertRaises(SystemExit):
+                    cli_main([
+                        "uninstall", "--client", "codex", "--destination", str(destination), "--yes",
+                    ])
+            self.assertTrue(target.is_symlink())
+
+    def test_client_uninstall_moves_tree_to_external_backup(self) -> None:
+        with tempfile.TemporaryDirectory() as value, mock.patch("sys.stdout"):
+            destination = Path(value) / "config" / "skills"
+            installed = destination / "skill-quality-lab"
+            installed.mkdir(parents=True)
+            (installed / "marker.txt").write_text("keep", encoding="utf-8")
+            result = cli_main([
+                "uninstall", "--client", "codex", "--destination", str(destination), "--yes",
+            ])
+            self.assertEqual(0, result)
+            self.assertFalse(installed.exists())
+            backups = list((destination.parent / ".skill-quality-lab-backups" / "codex").iterdir())
+            self.assertEqual(1, len(backups))
+            self.assertEqual("keep", (backups[0] / "marker.txt").read_text(encoding="utf-8"))
 
 
 class ComparisonTests(unittest.TestCase):

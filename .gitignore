@@ -5,6 +5,8 @@ docs-internal/
 # Generated audit artifacts
 reports/
 dist/
+build/
+*.egg-info/
 *.audit.json
 *.audit.md
 *.zip
@@ -14,5 +16,7 @@ dist/
 __pycache__/
 *.py[cod]
 .venv/
+.pytest_cache/
+.ruff_cache/
 .DS_Store
 Thumbs.db

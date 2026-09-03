@@ -142,7 +142,7 @@ def parse_decision(text: str) -> dict[str, Any]:
 def execute_suite(data: dict[str, Any], skill_directory: Path, runner: str,
                   model: str | None = None, command: list[str] | None = None,
                   timeout: int = 60, limit: int | None = None) -> dict[str, Any]:
-    from skill_quality_lib import parse_frontmatter
+    from .skill_quality_lib import parse_frontmatter
 
     skill_file = skill_directory.resolve() / "SKILL.md"
     if not skill_file.is_file():

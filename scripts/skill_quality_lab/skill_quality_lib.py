@@ -9,8 +9,8 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Iterable
 
-from runtime_checks import check_runtime_file, summarize_checks
-from security_checks import scan_security, security_capabilities
+from .runtime_checks import check_runtime_file, summarize_checks
+from .security_checks import scan_security, security_capabilities
 
 try:
     import yaml
@@ -378,11 +378,19 @@ def audit_skill(skill_dir: Path, profile: str = "portable",
                 "Remove it until a resource is needed.", folder))
         for path in files:
             relative = path.relative_to(root).as_posix()
-            if relative not in mentioned:
+            routed = relative in mentioned or any(
+                relative.startswith(item.rstrip("/") + "/") for item in mentioned
+            )
+            parts = path.relative_to(folder).parts
+            python_package_member = (
+                folder_name == "scripts" and len(parts) > 1
+                and (folder / parts[0] / "__init__.py").is_file()
+            )
+            if not routed:
                 findings.append(_make_finding("warning", "unrouted-resource",
                     "A bundled resource is not explicitly routed from SKILL.md.", relative,
                     "Reference it with a usage condition, or remove it.", path))
-            if len(path.relative_to(folder).parts) > 1:
+            if len(parts) > 1 and not python_package_member:
                 findings.append(_make_finding("warning", "nested-resource",
                     "A resource is nested more than one level.", relative,
                     "Prefer a directly addressable, one-level resource layout.", path))

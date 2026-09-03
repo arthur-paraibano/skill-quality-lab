@@ -12,8 +12,8 @@ from typing import Any, Callable
 
 import yaml
 
-from security_checks import scan_security
-from runtime_checks import check_runtime_file
+from .runtime_checks import check_runtime_file
+from .security_checks import scan_security
 
 
 @dataclass(frozen=True)

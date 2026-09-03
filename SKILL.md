@@ -9,6 +9,8 @@ Evaluate skills with deterministic checks and evidence-based semantic review. Pr
 
 Require Python 3.11+ and PyYAML 6.x for the bundled CLIs. If PyYAML is unavailable, report the prerequisite; install from `scripts/requirements.txt` only with the user's approval.
 
+When the PyPI distribution is installed, prefer the `skill-quality-lab` console command and its subcommands so dependencies resolve inside the package environment. Keep the `scripts/*.py` commands as source-portable fallbacks inside the skill bundle; they still require the declared runtime dependencies in the invoking Python interpreter.
+
 ## Choose the operation
 
 - **Audit:** Inspect one skill and report findings.
@@ -29,7 +31,7 @@ Require Python 3.11+ and PyYAML 6.x for the bundled CLIs. If PyYAML is unavailab
    python scripts/audit_skill.py <target> --profile portable --format markdown
    ```
 
-   Resolve scripts from this skill's directory when working elsewhere. Use `--strict` for a release gate, `--format json` for automation, and `--output <path>` to save a report. Read [configuration](references/configuration.md) before applying suppressions or severity overrides. Read [runtime checks](references/runtime-checks.md) and [security](references/security.md) before interpreting coverage. The CLI uses `scripts/skill_quality_lib.py`, `scripts/runtime_checks.py`, and `scripts/security_checks.py`; do not invoke these libraries directly.
+   Resolve scripts from this skill's directory when working elsewhere. Use `--strict` for a release gate, `--format json` for automation, and `--output <path>` to save a report. Read [configuration](references/configuration.md) before applying suppressions or severity overrides. Read [runtime checks](references/runtime-checks.md) and [security](references/security.md) before interpreting coverage. The compatibility commands use the `scripts/skill_quality_lab` Python package; do not invoke its library modules directly.
 
 4. Read [the quality rubric](references/rubric.md) and assess semantic criteria that static analysis cannot prove.
 5. For cross-client claims, read [the portability guide](references/portability.md). Distinguish format compatibility, workflow compatibility, and behavior tested in each client.
@@ -83,7 +85,7 @@ Read [ecosystem adapters](references/ecosystem-adapters.md), then run:
 python scripts/audit_ecosystem.py <target> --adapter <mcp|openapi|langchain|semantic-kernel>
 ```
 
-The CLI uses `scripts/ecosystem_adapters.py`. Keep adapter conclusions separate from SKILL.md portability claims.
+The CLI uses `scripts/skill_quality_lab/ecosystem_adapters.py`. Keep adapter conclusions separate from SKILL.md portability claims.
 
 ## Package and install
 
