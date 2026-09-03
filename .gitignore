@@ -1,0 +1,18 @@
+# Local development artifacts
+.internal/
+docs-internal/
+
+# Generated audit artifacts
+reports/
+dist/
+*.audit.json
+*.audit.md
+*.zip
+*.zip.sha256
+
+# Local caches and environments
+__pycache__/
+*.py[cod]
+.venv/
+.DS_Store
+Thumbs.db
