@@ -4,7 +4,7 @@
 
 [![Python 3.11+](https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Tests: 34 passing](https://img.shields.io/badge/tests-34%20passing-brightgreen)](tests/test_skill_quality.py)
+[![CI](https://github.com/arthur-paraibano/skill-quality-lab/actions/workflows/ci.yml/badge.svg)](https://github.com/arthur-paraibano/skill-quality-lab/actions/workflows/ci.yml)
 
 Skill Quality Lab is a local-first toolkit for auditing, testing, packaging, and installing
 `SKILL.md`-based skills. It combines repeatable checks with a manual review rubric. Static results
@@ -60,13 +60,7 @@ Skill Quality Lab gives maintainers a single release workflow:
 ## Requirements
 
 - Python 3.11 or newer
-- PyYAML 6.x
-
-Install the only required Python dependency:
-
-```bash
-python -m pip install -r scripts/requirements.txt
-```
+- `pip` or `pipx`
 
 Optional checks use tools already available on `PATH`:
 
@@ -83,38 +77,64 @@ checks.
 
 ## Installation
 
-Clone or download this repository, then either run the scripts directly or place the complete
-folder in the skills directory used by your compatible agent client.
-
-For Codex, a typical user-level location is:
-
-```text
-~/.codex/skills/skill-quality-lab/
-```
-
-The directory name must remain `skill-quality-lab`, and `SKILL.md` must be at its root.
-
-Validate the installation:
+After the first release is published, install the command-line tool from PyPI:
 
 ```bash
-python /path/to/skill-quality-lab/scripts/audit_skill.py \
-  /path/to/skill-quality-lab \
-  --profile codex \
-  --strict
+python -m pip install skill-quality-lab
+```
+
+For an isolated global command, use `pipx`:
+
+```bash
+pipx install skill-quality-lab
+```
+
+With `pipx`, run audits through the global `skill-quality-lab` command so they use the isolated
+environment that includes PyYAML. Direct execution of a bundled `scripts/*.py` file requires
+PyYAML 6.x in that script's Python interpreter; install `scripts/requirements.txt` when needed.
+
+Then install the bundled skill for Codex or Claude:
+
+```bash
+skill-quality-lab install --client codex
+skill-quality-lab install --client claude
+```
+
+Preview the target without changing it:
+
+```bash
+skill-quality-lab install --client codex --dry-run
+```
+
+Codex uses `$CODEX_HOME/skills` or `~/.codex/skills`. Claude uses
+`$CLAUDE_CONFIG_DIR/skills` or `~/.claude/skills`. Override either destination explicitly when
+needed:
+
+```bash
+skill-quality-lab install --client codex --destination /path/to/skills
+```
+
+Existing installations are never overwritten unless `--replace` is supplied. Replaced and
+uninstalled copies are moved to a backup outside the watched skills directory.
+
+Check the package and client installations:
+
+```bash
+skill-quality-lab doctor
 ```
 
 ## Quick start
 
-From the repository root, audit another skill:
+Audit a skill from any directory:
 
 ```bash
-python scripts/audit_skill.py /path/to/my-skill --profile portable
+skill-quality-lab audit /path/to/my-skill --profile portable
 ```
 
 Use strict mode for a release gate and JSON for CI or other automation:
 
 ```bash
-python scripts/audit_skill.py /path/to/my-skill \
+skill-quality-lab audit /path/to/my-skill \
   --profile codex \
   --strict \
   --format json \
@@ -137,13 +157,13 @@ coverage, security capabilities, and known limits.
 Capture reports before and after a change:
 
 ```bash
-python scripts/audit_skill.py /path/to/my-skill \
+skill-quality-lab audit /path/to/my-skill \
   --format json --output reports/before.audit.json
 
-python scripts/audit_skill.py /path/to/my-skill \
+skill-quality-lab audit /path/to/my-skill \
   --format json --output reports/after.audit.json
 
-python scripts/compare_audits.py \
+skill-quality-lab compare \
   reports/before.audit.json reports/after.audit.json
 ```
 
@@ -155,13 +175,13 @@ score change as proof of improvement.
 The built-in scan is local and read-only:
 
 ```bash
-python scripts/security_scan.py /path/to/my-skill
+skill-quality-lab security /path/to/my-skill
 ```
 
 Use an installed external scanner explicitly:
 
 ```bash
-python scripts/security_scan.py /path/to/my-skill --external available
+skill-quality-lab security /path/to/my-skill --external available
 ```
 
 Candidate secret values are redacted from reports. Inline suppressions use the following form and
@@ -178,13 +198,13 @@ Only suppress a finding after verifying the resolved target, safeguards, and rec
 Plan mode discovers requirements without changing the environment:
 
 ```bash
-python scripts/check_dependencies.py /path/to/my-skill
+skill-quality-lab dependencies /path/to/my-skill
 ```
 
 After approving network access and package build-code execution, create a disposable environment:
 
 ```bash
-python scripts/check_dependencies.py /path/to/my-skill \
+skill-quality-lab dependencies /path/to/my-skill \
   --create-venv \
   --import yaml
 ```
@@ -197,13 +217,13 @@ Create a suite with at least three direct positives, two indirect positives, thr
 two boundary cases. Validate it before execution:
 
 ```bash
-python scripts/activation_suite.py activation-suite.json
+skill-quality-lab validate-activation activation-suite.json
 ```
 
 Run it through a local command harness:
 
 ```bash
-python scripts/run_activation.py activation-suite.json \
+skill-quality-lab activation activation-suite.json \
   --skill-directory /path/to/my-skill \
   --output activation-results.json \
   --runner command \
@@ -224,7 +244,7 @@ explicit model, `--allow-network`, and the corresponding environment credential.
 for cost-bounded trials.
 
 ```bash
-python scripts/run_activation.py activation-suite.json \
+skill-quality-lab activation activation-suite.json \
   --skill-directory /path/to/my-skill \
   --output classified-results.json \
   --runner openai \
@@ -239,10 +259,10 @@ or loaded the skill. Conditional boundary cases always require human adjudicatio
 ### Audit adjacent ecosystems
 
 ```bash
-python scripts/audit_ecosystem.py /path/to/artifact --adapter openapi
-python scripts/audit_ecosystem.py /path/to/artifact --adapter mcp
-python scripts/audit_ecosystem.py /path/to/project --adapter langchain
-python scripts/audit_ecosystem.py /path/to/project --adapter semantic-kernel
+skill-quality-lab ecosystem /path/to/artifact --adapter openapi
+skill-quality-lab ecosystem /path/to/artifact --adapter mcp
+skill-quality-lab ecosystem /path/to/project --adapter langchain
+skill-quality-lab ecosystem /path/to/project --adapter semantic-kernel
 ```
 
 These adapters are structural preflight checks. They do not connect to servers, invoke endpoints,
@@ -253,7 +273,7 @@ restore every dependency ecosystem, or prove production behavior.
 Create a deterministic archive only after a clean audit:
 
 ```bash
-python scripts/package_skill.py /path/to/my-skill \
+skill-quality-lab package /path/to/my-skill \
   --output dist/my-skill.zip \
   --checksum
 ```
@@ -308,12 +328,16 @@ rules.
 
 ```text
 skill-quality-lab/
-├── SKILL.md                    # Agent-facing workflow and activation contract
+├── .github/workflows/          # Cross-platform CI and trusted releases
 ├── agents/openai.yaml          # Codex UI metadata
-├── scripts/                    # Deterministic CLIs and reusable libraries
-├── references/                 # Detailed guidance loaded only when needed
+├── references/                 # Detailed operational guidance
+├── scripts/
+│   ├── skill_quality_lab/      # Canonical Python package
+│   └── *.py                    # Standalone compatibility commands
 ├── tests/test_skill_quality.py # Unit and integration tests
-├── README.md                   # Community-facing documentation
+├── pyproject.toml              # PyPI metadata and build configuration
+├── README.md                   # Community documentation
+├── SKILL.md                    # Skill workflow and activation contract
 └── LICENSE                     # MIT
 ```
 
@@ -325,7 +349,16 @@ them out of the runtime ZIP.
 Run the complete test suite:
 
 ```bash
+python -m pip install -e .
 python -m unittest discover -s tests -v
+```
+
+Build and validate the PyPI distributions:
+
+```bash
+python -m pip install build twine
+python -m build
+python -m twine check dist/*
 ```
 
 Validate the skill metadata with the official `skill-creator` validator when available:
@@ -337,9 +370,40 @@ python /path/to/skill-creator/scripts/quick_validate.py .
 Audit the project against every supported profile:
 
 ```bash
-python scripts/audit_skill.py . --profile portable --strict
-python scripts/audit_skill.py . --profile codex --strict
-python scripts/audit_skill.py . --profile claude --strict
+skill-quality-lab audit . --profile portable --strict
+skill-quality-lab audit . --profile codex --strict
+skill-quality-lab audit . --profile claude --strict
+```
+
+Releases are tag-driven. A tag such as `v0.1.0` must match the package version. GitHub Actions
+tests the tag on Python 3.11–3.14 across Linux, Windows, and macOS, publishes to TestPyPI, and then
+publishes to PyPI through Trusted Publishing. No long-lived PyPI token is stored in the repository.
+
+### Maintainer release setup
+
+Before publishing, enable two-factor authentication on PyPI and TestPyPI and store the recovery
+codes securely. Create the GitHub environments `testpypi` and `pypi`, and require manual approval
+for `pypi`. Protect `main` with required CI checks and add a GitHub ruleset that restricts creation,
+updates, and deletion of `v*` tags.
+
+Register a Pending GitHub Publisher on both package indexes with these exact values:
+
+| Field | PyPI | TestPyPI |
+|---|---|---|
+| Project | `skill-quality-lab` | `skill-quality-lab` |
+| Owner | `arthur-paraibano` | `arthur-paraibano` |
+| Repository | `skill-quality-lab` | `skill-quality-lab` |
+| Workflow | `release.yml` | `release.yml` |
+| Environment | `pypi` | `testpypi` |
+
+PyPI and TestPyPI use separate accounts and publisher settings. A pending publisher does not
+reserve the project name, so publish the first release promptly after configuration. Do not add a
+`PYPI_TOKEN` secret. After both publishers are configured, release the version declared in
+`scripts/skill_quality_lab/__init__.py`:
+
+```bash
+git tag -a v0.1.0 -m "Release v0.1.0"
+git push origin v0.1.0
 ```
 
 Before opening a contribution:
