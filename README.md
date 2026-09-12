@@ -3,6 +3,7 @@
 **A release checklist and test runner for Agent Skills.**
 
 [![Python 3.11+](https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
+[![PyPI](https://img.shields.io/pypi/v/skill-quality-lab.svg)](https://pypi.org/project/skill-quality-lab/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![CI](https://github.com/arthur-paraibano/skill-quality-lab/actions/workflows/ci.yml/badge.svg)](https://github.com/arthur-paraibano/skill-quality-lab/actions/workflows/ci.yml)
 
@@ -77,7 +78,9 @@ checks.
 
 ## Installation
 
-After the first release is published, install the command-line tool from PyPI:
+### Install the CLI
+
+Install the command-line tool from PyPI:
 
 ```bash
 python -m pip install skill-quality-lab
@@ -93,11 +96,20 @@ With `pipx`, run audits through the global `skill-quality-lab` command so they u
 environment that includes PyYAML. Direct execution of a bundled `scripts/*.py` file requires
 PyYAML 6.x in that script's Python interpreter; install `scripts/requirements.txt` when needed.
 
-Then install the bundled skill for Codex or Claude:
+### Install the Agent Skill
+
+Install the skill bundled with the CLI for Codex or Claude:
 
 ```bash
 skill-quality-lab install --client codex
 skill-quality-lab install --client claude
+```
+
+Alternatively, install the skill directly from GitHub with the open
+[`skills` CLI](https://skills.sh/docs/cli):
+
+```bash
+npx skills add arthur-paraibano/skill-quality-lab
 ```
 
 Preview the target without changing it:
@@ -149,6 +161,58 @@ Available profiles:
 
 Every report includes a verdict, score formula, findings with evidence and remediation, runtime
 coverage, security capabilities, and known limits.
+
+## Demo: catch and fix a release blocker
+
+This disposable example is suitable for a terminal recording, GIF, short video, or live demo. It
+first proves that the released project passes, then introduces one broken reference and shows the
+release gate catching it.
+
+After installing the CLI, open an empty parent directory, clone a fresh demonstration copy, and
+run the baseline audit:
+
+```bash
+git clone --depth 1 https://github.com/arthur-paraibano/skill-quality-lab.git
+cd skill-quality-lab
+skill-quality-lab audit . --profile codex --strict
+```
+
+Expected baseline:
+
+```text
+Verdict: ready
+Structural score: 100/100
+Counts: 0 errors, 0 warnings, 1 notes
+```
+
+Introduce a harmless broken link in the disposable copy:
+
+```bash
+python -c "from pathlib import Path; p=Path('SKILL.md'); p.write_text(p.read_text(encoding='utf-8').replace('references/configuration.md', 'references/missing.md'), encoding='utf-8')"
+skill-quality-lab audit . --profile codex --strict
+```
+
+The command now exits nonzero and reports the actionable evidence:
+
+```text
+Verdict: not ready
+Structural score: 73/100
+[error] broken-reference
+Evidence: references/missing.md
+[warning] unrouted-resource
+Counts: 1 errors, 1 warnings, 1 notes
+```
+
+Restore the file and prove that the release gate is green again:
+
+```bash
+git restore SKILL.md
+skill-quality-lab audit . --profile codex --strict
+```
+
+For a concise recording, show only the three audit moments: `100/100`, the broken-reference
+finding, and the restored `100/100`. Keep the terminal large enough to make the finding, evidence,
+and remediation readable.
 
 ## Core workflows
 
@@ -281,7 +345,7 @@ skill-quality-lab package /path/to/my-skill \
 Preview installation into an explicit skills directory:
 
 ```bash
-python scripts/install_skill.py dist/my-skill.zip \
+python -m skill_quality_lab.install_skill dist/my-skill.zip \
   --destination /path/to/skills \
   --dry-run
 ```
@@ -356,7 +420,7 @@ python -m unittest discover -s tests -v
 Build and validate the PyPI distributions:
 
 ```bash
-python -m pip install build twine
+python -m pip install build==1.6.1 twine==7.0.0
 python -m build
 python -m twine check dist/*
 ```
@@ -387,7 +451,8 @@ codes securely. Create the GitHub environments `testpypi` and `pypi`, and requir
 for `pypi`. Protect `main` with required CI checks and add a GitHub ruleset that restricts creation,
 updates, and deletion of `v*` tags.
 
-Register a Pending GitHub Publisher on both package indexes with these exact values:
+Add a GitHub Actions Trusted Publisher to the existing project on both package indexes with these
+exact values:
 
 | Field | PyPI | TestPyPI |
 |---|---|---|
@@ -397,16 +462,16 @@ Register a Pending GitHub Publisher on both package indexes with these exact val
 | Workflow | `release.yml` | `release.yml` |
 | Environment | `pypi` | `testpypi` |
 
-PyPI and TestPyPI use separate accounts and publisher settings. A pending publisher does not
-reserve the project name, so publish the first release promptly after configuration. Do not add a
-`PYPI_TOKEN` secret. After both publishers are configured, start from a clean, synchronized `main`
-branch and create the next unused version tag only after every release change is committed:
+PyPI and TestPyPI use separate accounts and publisher settings. Do not add a `PYPI_TOKEN` secret.
+After both publishers are configured, start from a clean, synchronized `main` branch and create the
+next unused version tag only after every release change is committed. For example, replace `0.1.5`
+below when another version is the appropriate next release:
 
 ```bash
 git pull --ff-only
 git status --short
-git tag -a v0.2.0 -m "Release v0.2.0"
-git push origin v0.2.0
+git tag -a v0.1.5 -m "Release v0.1.5"
+git push origin v0.1.5
 ```
 
 The empty `git status --short` output is required. Never create a release tag before its changes
