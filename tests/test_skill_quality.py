@@ -439,8 +439,20 @@ class DistributionTests(unittest.TestCase):
         metadata = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
         self.assertEqual("skill-quality-lab", metadata["project"]["name"])
         self.assertEqual(["PyYAML>=6.0,<7"], metadata["project"]["dependencies"])
+        self.assertEqual(
+            ["hatchling==1.32.0", "hatch-vcs==0.5.0"],
+            metadata["build-system"]["requires"],
+        )
+        self.assertEqual("vcs", metadata["tool"]["hatch"]["version"]["source"])
         requirements = (ROOT / "scripts" / "requirements.txt").read_text(encoding="utf-8").splitlines()
         self.assertEqual(["PyYAML>=6.0,<7"], requirements)
+
+    def test_release_workflow_uses_metadata_25_compatible_publisher(self) -> None:
+        workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
+        publisher = "pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33"
+        self.assertEqual(2, workflow.count(publisher))
+        self.assertNotIn("gh-action-pypi-publish@ed0c53931b1dc9bd32cbe73a98c7f6766f8a527e", workflow)
+        self.assertIn("twine==7.0.0", workflow)
 
     def test_skill_archive_excludes_pypi_only_modules(self) -> None:
         packaged = {path.relative_to(ROOT).as_posix() for path in package_files(ROOT)}

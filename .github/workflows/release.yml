@@ -24,6 +24,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          fetch-depth: 0
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: ${{ matrix.python }}
@@ -40,6 +41,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          fetch-depth: 0
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.13"
@@ -51,25 +53,55 @@ jobs:
           python - <<'PY'
           import os
           import re
-          from pathlib import Path
 
-          source = Path("scripts/skill_quality_lab/__init__.py").read_text(encoding="utf-8")
-          match = re.search(r'__version__\s*=\s*["\x27]([^"\x27]+)', source)
-          if match is None:
-              raise SystemExit("package version not found")
-          version = match.group(1)
           tag = os.environ["RELEASE_TAG"]
           if re.fullmatch(r"v\d+\.\d+\.\d+", tag) is None:
               raise SystemExit(f"invalid release tag: {tag}")
-          if tag[1:] != version:
-              raise SystemExit(f"tag {tag} does not match package version {version}")
           PY
       - name: Install build tools
-        run: python -m pip install build twine
+        run: python -m pip install build==1.6.1 twine==7.0.0
       - name: Build and validate distributions
         run: |
           python -m build
           python -m twine check dist/*
+      - name: Verify artifact versions match tag
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          python - <<'PY'
+          import email
+          import os
+          import tarfile
+          import zipfile
+          from pathlib import Path
+
+          expected = os.environ["RELEASE_TAG"].removeprefix("v")
+          wheels = list(Path("dist").glob("*.whl"))
+          sdists = list(Path("dist").glob("*.tar.gz"))
+          if len(wheels) != 1 or len(sdists) != 1:
+              raise SystemExit(f"expected one wheel and one sdist, found {wheels=} {sdists=}")
+
+          with zipfile.ZipFile(wheels[0]) as archive:
+              names = [name for name in archive.namelist() if name.endswith(".dist-info/METADATA")]
+              if len(names) != 1:
+                  raise SystemExit(f"expected one wheel METADATA file, found {names}")
+              wheel_metadata = email.message_from_bytes(archive.read(names[0]))
+
+          with tarfile.open(sdists[0], "r:gz") as archive:
+              members = [member for member in archive.getmembers() if member.name.endswith("/PKG-INFO")]
+              if len(members) != 1:
+                  raise SystemExit(f"expected one sdist PKG-INFO file, found {members}")
+              stream = archive.extractfile(members[0])
+              if stream is None:
+                  raise SystemExit("could not read sdist PKG-INFO")
+              sdist_metadata = email.message_from_bytes(stream.read())
+
+          for artifact, metadata in ((wheels[0], wheel_metadata), (sdists[0], sdist_metadata)):
+              actual = metadata["Version"]
+              if actual != expected:
+                  raise SystemExit(f"{artifact.name} has version {actual}, expected {expected}")
+              print(f"{artifact.name}: version {actual}, metadata {metadata['Metadata-Version']}")
+          PY
       - name: Smoke-test exact release wheel
         run: |
           python - <<'PY'

@@ -375,8 +375,9 @@ skill-quality-lab audit . --profile codex --strict
 skill-quality-lab audit . --profile claude --strict
 ```
 
-Releases are tag-driven. A tag such as `v0.1.0` must match the package version. GitHub Actions
-tests the tag on Python 3.11–3.14 across Linux, Windows, and macOS, publishes to TestPyPI, and then
+Releases are tag-driven. The package version is derived directly from an annotated `vX.Y.Z` Git
+tag, eliminating a separate source version to update manually. GitHub Actions tests the tag on
+Python 3.11–3.14 across Linux, Windows, and macOS, publishes to TestPyPI, and then
 publishes to PyPI through Trusted Publishing. No long-lived PyPI token is stored in the repository.
 
 ### Maintainer release setup
@@ -398,13 +399,19 @@ Register a Pending GitHub Publisher on both package indexes with these exact val
 
 PyPI and TestPyPI use separate accounts and publisher settings. A pending publisher does not
 reserve the project name, so publish the first release promptly after configuration. Do not add a
-`PYPI_TOKEN` secret. After both publishers are configured, release the version declared in
-`scripts/skill_quality_lab/__init__.py`:
+`PYPI_TOKEN` secret. After both publishers are configured, start from a clean, synchronized `main`
+branch and create the next unused version tag only after every release change is committed:
 
 ```bash
-git tag -a v0.1.0 -m "Release v0.1.0"
-git push origin v0.1.0
+git pull --ff-only
+git status --short
+git tag -a v0.2.0 -m "Release v0.2.0"
+git push origin v0.2.0
 ```
+
+The empty `git status --short` output is required. Never create a release tag before its changes
+are committed and pushed to `main`. The release workflow independently verifies the versions
+embedded in both the wheel and source distribution before either artifact reaches a package index.
 
 Before opening a contribution:
 
