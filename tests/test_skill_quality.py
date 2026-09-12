@@ -453,6 +453,8 @@ class DistributionTests(unittest.TestCase):
         self.assertEqual(2, workflow.count(publisher))
         self.assertNotIn("gh-action-pypi-publish@ed0c53931b1dc9bd32cbe73a98c7f6766f8a527e", workflow)
         self.assertIn("twine==7.0.0", workflow)
+        self.assertIn('"git", "merge-base", "--is-ancestor"', workflow)
+        self.assertEqual(1, workflow.count("skip-existing: true"))
 
     def test_skill_archive_excludes_pypi_only_modules(self) -> None:
         packaged = {path.relative_to(ROOT).as_posix() for path in package_files(ROOT)}

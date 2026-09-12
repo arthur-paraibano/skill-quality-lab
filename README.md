@@ -411,7 +411,9 @@ git push origin v0.2.0
 
 The empty `git status --short` output is required. Never create a release tag before its changes
 are committed and pushed to `main`. The release workflow independently verifies the versions
-embedded in both the wheel and source distribution before either artifact reaches a package index.
+embedded in both the wheel and source distribution before either artifact reaches a package index,
+and rejects tags whose commit is not contained in `main`. TestPyPI uploads are safe to rerun when
+that index already contains one or both artifacts for the release version.
 
 Before opening a contribution:
 
